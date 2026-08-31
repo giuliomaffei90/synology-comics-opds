@@ -1,0 +1,9 @@
+# dati generati a runtime: restano sul NAS, non nel repo
+data/
+cache/
+logs/
+__pycache__/
+*.pyc
+
+# config reale: contiene l'hash della password
+config/config.yaml

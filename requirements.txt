@@ -1,0 +1,6 @@
+# Nessuna dipendenza obbligatoria: il server usa solo la standard library di Python 3.8+.
+#
+# Opzionale, solo se hai .cbr realmente in formato RAR e vuoi copertine e
+# lettura pagina-per-pagina anche per quelli (richiede il binario `unrar`):
+#   pip3 install rarfile
+# I .cbr che internamente sono ZIP funzionano gia' senza installare nulla.

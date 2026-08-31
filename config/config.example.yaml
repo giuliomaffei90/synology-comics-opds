@@ -1,0 +1,36 @@
+# Comics OPDS - configuration
+# Format: a section, then indented "key: value" pairs. No lists, no multi-line
+# strings. Every value can be overridden by an environment variable named
+# OPDS_<SECTION>_<KEY>, e.g. OPDS_SERVER_PORT=2300
+
+server:
+  host: 0.0.0.0
+  port: 2202
+  # base_url: force the public URL used inside the OPDS feeds.
+  # Leave empty to derive it from X-Forwarded-Proto / X-Forwarded-Host / Host.
+  base_url:
+
+library:
+  path: /volume1/Contents/Comics
+
+database:
+  path: /volume1/Contents/OpdsServer/data/library.db
+
+cache:
+  path: /volume1/Contents/OpdsServer/cache
+
+security:
+  enabled: true
+  username: comics
+  # generate with: python3 server.py passwd
+  password_hash:
+
+scan:
+  on_startup: true
+  interval_minutes: 60
+
+logging:
+  path: /volume1/Contents/OpdsServer/logs/server.log
+  level: INFO
+  max_bytes: 2000000
+  backups: 3
