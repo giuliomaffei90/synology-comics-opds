@@ -12,6 +12,9 @@ server:
 
 library:
   path: /volume1/Contents/Comics
+  # folders offered by the selector on the status page. Empty means the
+  # directories next to the one above.
+  browse_root:
 
 database:
   path: /volume1/Contents/OpdsServer/data/library.db

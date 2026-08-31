@@ -57,7 +57,7 @@ log = logging.getLogger("server")
 
 DEFAULTS = {
     "server": {"host": "0.0.0.0", "port": 2202, "base_url": ""},
-    "library": {"path": "/volume1/Contents/Comics"},
+    "library": {"path": "/volume1/Contents/Comics", "browse_root": ""},
     "database": {"path": os.path.join(BASE_DIR, "data", "library.db")},
     "cache": {"path": os.path.join(BASE_DIR, "cache")},
     "security": {"enabled": True, "username": "", "password_hash": ""},
@@ -124,6 +124,51 @@ def load_config(path):
     return cfg
 
 
+def library_choices(cfg):
+    """Cartelle proponibili come libreria: quelle accanto a quella corrente.
+
+    Un elenco chiuso invece di un percorso libero: la pagina di gestione e'
+    raggiungibile da Internet, e un campo libero lascerebbe puntare il server
+    a qualunque cartella del NAS.
+    """
+    current = os.path.realpath(str(cfg["library"]["path"]))
+    root = str(cfg["library"].get("browse_root") or "") or os.path.dirname(current)
+    found = []
+    try:
+        for name in sorted(os.listdir(root)):
+            full = os.path.join(root, name)
+            # @eaDir e #recycle sono cartelle di servizio di DSM, non librerie
+            if os.path.isdir(full) and name[:1] not in (".", "@", "#"):
+                found.append(full)
+    except OSError as e:
+        log.warning("cannot list %s: %s", root, e)
+    if current not in found:
+        found.insert(0, current)
+    return found
+
+
+def write_config_value(path, section, key, value):
+    """Sostituisce una voce nel file di configurazione lasciando intatto il resto."""
+    with open(path, encoding="utf-8") as f:
+        lines = f.readlines()
+    in_section, done = False, False
+    for i, line in enumerate(lines):
+        stripped = line.split("#", 1)[0].rstrip()
+        if not stripped:
+            continue
+        if not line[:1].isspace():
+            in_section = stripped.rstrip(":").strip() == section
+        elif in_section and stripped.strip().split(":", 1)[0].strip() == key:
+            indent = line[:len(line) - len(line.lstrip())]
+            lines[i] = "%s%s: %s\n" % (indent, key, value)
+            done = True
+            break
+    if not done:
+        raise ValueError("%s.%s not found in %s" % (section, key, path))
+    with open(path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
 # ---------------------------------------------------------------- password
 
 def hash_password(password, salt=None, iterations=PBKDF2_ITER):
@@ -177,6 +222,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # iniettati da serve()
     lib = None
     cfg = None
+    config_path = None
 
     def version_string(self):
         return self.server_version
@@ -266,6 +312,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._page(path[len("/page/"):], query)
             if path == "/admin/scan" and self.command == "POST":
                 return self._scan()
+            if path == "/admin/library" and self.command == "POST":
+                return self._set_library()
         except BrokenPipeError:
             pass  # client hung up mid-download: routine with OPDS readers
         except Exception:
@@ -277,10 +325,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _home(self):
         s = self.lib.stats()
+        current = os.path.realpath(str(self.cfg["library"]["path"]))
+        options = "".join(
+            '<option value="%s"%s>%s</option>'
+            % (html.escape(c), " selected" if c == current else "", html.escape(c))
+            for c in library_choices(self.cfg))
         body = ("""<!doctype html><meta charset=utf-8>
 <title>Comics OPDS</title>
-<style>body{font-family:system-ui;margin:3rem auto;max-width:34rem}
-td{padding:.2rem 1rem .2rem 0}button{padding:.5rem 1rem}</style>
+<style>body{font-family:system-ui;margin:3rem auto;max-width:36rem}
+td{padding:.2rem 1rem .2rem 0}button{padding:.5rem 1rem}
+form{margin:1rem 0}select{padding:.4rem;max-width:26rem}
+p.note{color:#666;font-size:.9rem;margin:.3rem 0 0}</style>
 <h1>Comics OPDS</h1>
 <table>
 <tr><td>Folders<td><b>%d</b>
@@ -289,7 +344,16 @@ td{padding:.2rem 1rem .2rem 0}button{padding:.5rem 1rem}</style>
 <tr><td>Catalogue<td><a href="/opds">/opds</a>
 </table>
 <form method=post action=/admin/scan><button>Scan now</button></form>
-""" % (s["folders"], s["books"], html.escape(s["last_scan"]))).encode()
+<hr>
+<h2>Library folder</h2>
+<form method=post action=/admin/library>
+<select name=path>%s</select>
+<button>Use this folder</button>
+<p class=note>Switching rebuilds the index from scratch: the comics in the new
+folder are read and the previous ones are dropped, so it takes as long as a full
+scan.</p>
+</form>
+""" % (s["folders"], s["books"], html.escape(s["last_scan"]), options)).encode()
         self._send(200, body, "text/html; charset=utf-8")
 
     def _opds_folder(self, folder_id):
@@ -355,6 +419,27 @@ td{padding:.2rem 1rem .2rem 0}button{padding:.5rem 1rem}</style>
         if out_of_range:
             return self._error(404, "Page out of range")
         self._send(200, data, ctype, headers=[("Cache-Control", "public, max-age=86400")])
+
+    def _form(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return {}
+        return parse_qs(self.rfile.read(min(length, 8192)).decode("utf-8", "replace"))
+
+    def _set_library(self):
+        chosen = self._form().get("path", [""])[0]
+        if chosen not in library_choices(self.cfg):
+            log.warning("rejected library folder %r", chosen)
+            return self._error(400, "Folder not selectable")
+        if not os.path.isdir(chosen):
+            return self._error(400, "Folder no longer exists")
+        write_config_value(self.config_path, "library", "path", chosen)
+        self.cfg["library"]["path"] = chosen
+        Handler.lib = build_library(self.cfg)
+        log.info("library folder changed to %s", chosen)
+        threading.Thread(target=Handler.lib.scan, daemon=True, name="scan-switch").start()
+        self._send(303, b"", headers=[("Location", "/")])
 
     def _scan(self):
         threading.Thread(target=self.lib.scan, daemon=True, name="scan").start()
@@ -459,9 +544,10 @@ class Server(http.server.ThreadingHTTPServer):
     request_queue_size = 32
 
 
-def serve(cfg):
+def serve(cfg, config_path=None):
     lib = build_library(cfg)
     Handler.lib, Handler.cfg = lib, cfg
+    Handler.config_path = config_path
 
     if cfg["security"].get("enabled") and not cfg["security"].get("password_hash"):
         log.error("security.enabled=true but password_hash is empty: run 'server.py passwd'")
@@ -539,7 +625,7 @@ def running_pid(cfg):
         return None
 
 
-def cmd_start(cfg):
+def cmd_start(cfg, config_path=None):
     if running_pid(cfg):
         print("already running (pid %d)" % running_pid(cfg))
         return 1
@@ -578,7 +664,7 @@ def cmd_start(cfg):
     with open(pidfile(cfg), "w") as f:
         f.write(str(os.getpid()))
     try:
-        serve(cfg)
+        serve(cfg, config_path)
     finally:
         try:
             os.remove(pidfile(cfg))
@@ -627,7 +713,7 @@ def main(argv):
         setup_logging(cfg)
 
     if cmd == "run":
-        serve(cfg)
+        serve(cfg, config_path)
         return 0
     if cmd == "scan":
         build_library(cfg).scan()
@@ -636,12 +722,12 @@ def main(argv):
         build_library(cfg).scan(force=True)
         return 0
     if cmd == "start":
-        return cmd_start(cfg)
+        return cmd_start(cfg, config_path)
     if cmd == "stop":
         return cmd_stop(cfg)
     if cmd == "restart":
         cmd_stop(cfg)
-        return cmd_start(cfg)
+        return cmd_start(cfg, config_path)
     if cmd == "status":
         pid = running_pid(cfg)
         print("running (pid %d)" % pid if pid else "not running")

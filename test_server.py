@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 import zlib
@@ -384,6 +385,56 @@ def main():
             except urllib.error.HTTPError as e:
                 assert e.code == 404, (bad, e.code)
         print("ok  security: no paths in the feed, traversal rejected")
+
+        # --- library folder selector
+        altra = os.path.join(tmp, "Comics2")
+        make_cbz(os.path.join(altra, "Nuova Serie", "#1.cbz"))
+        cfg_file = os.path.join(tmp, "server.yaml")
+        with open(cfg_file, "w") as f:
+            f.write("library:\n  path: %s\n  browse_root: %s\n" % (root, tmp))
+        srv.Handler.config_path = cfg_file
+        cfg["library"]["browse_root"] = tmp
+
+        os.makedirs(os.path.join(tmp, "@eaDir"), exist_ok=True)
+        os.makedirs(os.path.join(tmp, "#recycle"), exist_ok=True)
+        scelte = srv.library_choices(cfg)
+        assert altra in scelte and root in scelte, scelte
+        assert "/etc" not in scelte
+        # le cartelle di servizio di DSM non sono librerie
+        assert not [c for c in scelte if os.path.basename(c)[:1] in ("@", "#", ".")], scelte
+
+        def posta(dati):
+            req = urllib.request.Request(base + "/admin/library", method="POST",
+                                         data=dati.encode())
+            req.add_header("Authorization", "Basic " + base64.b64encode(
+                b"tester:s3gr3t0").decode())
+            req.add_header("Content-Type", "application/x-www-form-urlencoded")
+            return urllib.request.urlopen(req, timeout=10)
+
+        try:
+            posta("path=/etc")
+            raise AssertionError("cartella arbitraria accettata")
+        except urllib.error.HTTPError as e:
+            assert e.code == 400, e.code
+
+        assert posta("path=" + urllib.parse.quote(altra)).status in (200, 303)
+        for _ in range(50):
+            if srv.Handler.lib.root == os.path.realpath(altra):
+                break
+            time.sleep(0.1)
+        assert srv.Handler.lib.root == os.path.realpath(altra), srv.Handler.lib.root
+        assert "path: %s" % altra in open(cfg_file).read(), open(cfg_file).read()
+        for _ in range(60):
+            if srv.Handler.lib.stats()["books"] == 1:
+                break
+            time.sleep(0.1)
+        assert srv.Handler.lib.stats()["books"] == 1, srv.Handler.lib.stats()
+        # tornando indietro l'indice si ricostruisce: il database e' lo stesso,
+        # quindi il passaggio di cartella svuota e ripopola
+        srv.Handler.lib, cfg["library"]["path"] = library, root
+        library.scan()
+        assert library.stats()["books"] == 13, library.stats()
+        print("ok  library selector: only listed folders, config saved, reindexed")
 
         # homepage and admin scan
         home = get(base + "/").read().decode()

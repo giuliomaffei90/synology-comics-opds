@@ -471,6 +471,7 @@ Every value can be overridden by an environment variable named
 | GET | `/cover/<id>` | cover image, extracted on first access then cached |
 | GET | `/page/<id>?page=N` | a single page (OPDS-PSE), `N` starts at 0 |
 | POST | `/admin/scan` | trigger a background scan |
+| POST | `/admin/library` | switch the library folder |
 | GET | `/health` | `ok`, **no authentication** |
 
 Everything else requires HTTP Basic auth. All `<id>` values are hashes of the
@@ -479,6 +480,21 @@ requests are resolved against the database rather than by joining user input
 onto a path.
 
 ---
+
+## Changing the library folder
+
+The status page at `/` has a dropdown listing the folders sitting next to the
+current library, so the folder can be switched without editing anything. Set
+`library.browse_root` to offer a different directory instead.
+
+It is a closed list on purpose: that page is reachable from the internet
+whenever the catalogue is, and a free-text field would let anyone who has the
+password point the server at any directory on the NAS.
+
+Switching rewrites `config.yaml`, then rebuilds the index from scratch — the
+comics in the new folder are read and the previous ones are dropped, since ids
+derive from the path relative to the library root. Expect it to take as long as
+a first scan, and expect readers to see everything as new.
 
 ## RAR archives
 
