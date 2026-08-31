@@ -10,3 +10,6 @@ config/config.yaml
 
 # local deployment settings: host, paths
 deploy.env
+
+# optional extras installed on the host (pip install --target lib)
+lib/

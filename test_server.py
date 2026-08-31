@@ -151,6 +151,10 @@ def main():
     assert again == (0, 0, 0, 0), again
     print("ok  incremental scan: nothing re-read")
 
+    forced = library.scan(force=True)
+    assert forced == (0, 13, 0, 0), forced   # every file re-read, none added or lost
+    print("ok  forced rescan: every file re-read though nothing changed")
+
     os.remove(os.path.join(root, "Batman", "Year One.cbz"))
     assert library.scan()[2] == 1
     make_cbz(os.path.join(root, "Batman", "Year One.cbz"))
@@ -324,7 +328,8 @@ def main():
             assert e.code == 404
         print("ok  PSE: /page?page=N returns the right page in natural order")
 
-        # real RAR without `rarfile`: downloadable, but no cover and no page streaming
+        # a RAR we cannot read - either `rarfile` is missing, or the archive is
+        # broken - stays downloadable, and must fail cleanly rather than with a 500
         rar_entry = next(e for e in ET.fromstring(get(base + "/opds/folder/" +
                          rar["dir_id"]).read()).findall("a:entry", ns)
                          if e.findtext("a:title", namespaces=ns).startswith("real"))
@@ -335,10 +340,10 @@ def main():
         assert len(get(rar_links["http://opds-spec.org/acquisition"].get("href")).read()) == 3007
         try:
             get("%s/page/%s?page=0" % (base, rar["id"]))
-            raise AssertionError("page streaming on RAR accepted but unsupported")
+            raise AssertionError("page streaming on an unreadable RAR was accepted")
         except urllib.error.HTTPError as e:
-            assert e.code == 415
-        print("ok  RAR without `rarfile`: download works, no cover/PSE, /page 415")
+            assert e.code == 415, "expected 415, got %d" % e.code
+        print("ok  unreadable RAR: download works, no cover/PSE, clean 415 on /page")
 
         # reverse proxy
         r = get(base + "/opds", headers={"X-Forwarded-Proto": "https",

@@ -292,19 +292,25 @@ class Library:
 
     # -- scanning
 
-    def scan(self):
-        """Incremental scan. Returns (added, updated, removed, errors)."""
+    def scan(self, force=False):
+        """Incremental scan. Returns (added, updated, removed, errors).
+
+        force=True re-reads every file even when unchanged. Needed when the
+        indexer itself gained an ability, such as reading RAR archives once
+        `rarfile` is installed: the files did not change, but what we can
+        learn from them did.
+        """
         if not self.scan_lock.acquire(blocking=False):
             log.info("scan already running, skipping")
             return None
         try:
-            return self._scan()
+            return self._scan(force)
         finally:
             self.scan_lock.release()
 
-    def _scan(self):
+    def _scan(self, force=False):
         t0 = time.time()
-        log.info("scan start: %s", self.root)
+        log.info("scan start: %s%s", self.root, " (forced)" if force else "")
         conn = self.connect()
         known = {r["path"]: r for r in conn.execute(
             "SELECT path, size, mtime FROM books")}
@@ -326,7 +332,8 @@ class Library:
                     errors += 1
                     continue
                 old = known.get(rel)
-                if old and old["size"] == st.st_size and old["mtime"] == st.st_mtime:
+                if (not force and old and old["size"] == st.st_size
+                        and old["mtime"] == st.st_mtime):
                     continue
                 try:
                     self._index(conn, full, rel, fn, st)

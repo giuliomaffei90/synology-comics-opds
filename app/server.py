@@ -4,7 +4,8 @@
 Usage:
     python3 server.py run [config.yaml]      # foreground (debugging)
     python3 server.py start|stop|restart     # daemon with a PID file
-    python3 server.py scan                   # one-off scan
+    python3 server.py scan                   # one-off incremental scan
+    python3 server.py rescan                 # re-read every file, ignoring mtimes
     python3 server.py passwd                 # generate a hash for config.yaml
 """
 import sys
@@ -29,6 +30,16 @@ from hashlib import pbkdf2_hmac
 from urllib.parse import unquote, urlparse, parse_qs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Optional extras installed beside the application rather than into a user
+# site-packages, e.g.
+#     python3 -m pip install --target <install>/lib rarfile
+# They then survive DSM package updates and work whichever user runs the
+# server, which matters because Task Scheduler starts it as root.
+_LIB = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
+if os.path.isdir(_LIB):
+    sys.path.insert(0, _LIB)
 
 import library
 import opds
@@ -315,18 +326,29 @@ td{padding:.2rem 1rem .2rem 0}button{padding:.5rem 1rem}</style>
             index = int(query.get("page", ["0"])[0])
         except ValueError:
             return self._error(400, "Invalid page parameter")
-        archive = library.open_archive(self.lib.abspath(row), row["kind"])
-        if archive is None:
-            return self._error(415, "Page streaming unsupported for this format")
+        archive, out_of_range = None, False
         try:
+            archive = library.open_archive(self.lib.abspath(row), row["kind"])
+            if archive is None:
+                raise ValueError("no reader for %s archives" % row["kind"])
             names = library.page_names(archive)
-            if not 0 <= index < len(names):
-                return self._error(404, "Page out of range")
-            data = archive.read(names[index])
-            ctype = library.IMAGE_MIME.get(
-                os.path.splitext(names[index])[1].lower(), "image/jpeg")
+            if not names:
+                raise ValueError("no readable pages inside")
+            out_of_range = not 0 <= index < len(names)
+            if not out_of_range:
+                data = archive.read(names[index])
+                ctype = library.IMAGE_MIME.get(
+                    os.path.splitext(names[index])[1].lower(), "image/jpeg")
+        except Exception as e:
+            # unsupported format, or an archive that will not open: a broken file
+            # is the client's answer, never a 500
+            log.warning("cannot stream pages of %s: %s", row["path"], e)
+            return self._error(415, "Page streaming unavailable for this file")
         finally:
-            archive.close()
+            if archive is not None:
+                archive.close()
+        if out_of_range:
+            return self._error(404, "Page out of range")
         self._send(200, data, ctype, headers=[("Cache-Control", "public, max-age=86400")])
 
     def _scan(self):
@@ -439,6 +461,9 @@ def serve(cfg):
     if cfg["security"].get("enabled") and not cfg["security"].get("password_hash"):
         log.error("security.enabled=true but password_hash is empty: run 'server.py passwd'")
         raise SystemExit(2)
+
+    log.info("RAR archives: %s", "readable" if library.rarfile
+             else "download only (pip install rarfile for covers and page streaming)")
 
     if cfg["scan"].get("on_startup"):
         threading.Thread(target=lib.scan, daemon=True, name="scan-startup").start()
@@ -591,7 +616,7 @@ def main(argv):
     config_path = argv[2] if len(argv) > 2 else os.path.join(BASE_DIR, "config", "config.yaml")
     cfg = load_config(config_path)
 
-    if cmd in ("run", "scan"):
+    if cmd in ("run", "scan", "rescan"):
         setup_logging(cfg, to_stderr=True)
     else:
         setup_logging(cfg)
@@ -601,6 +626,9 @@ def main(argv):
         return 0
     if cmd == "scan":
         build_library(cfg).scan()
+        return 0
+    if cmd == "rescan":
+        build_library(cfg).scan(force=True)
         return 0
     if cmd == "start":
         return cmd_start(cfg)

@@ -57,9 +57,10 @@ Supported formats:
 - Python 3.8 or newer
 - A folder full of comics
 
-Optional: `pip3 install rarfile` plus an `unrar` binary, if you have real RAR
-archives and want covers and page streaming for those too. Without it, RAR
-files are still fully downloadable.
+Optional: the `rarfile` module plus an `unrar` binary, if you have real RAR
+archives and want covers and page streaming for those too. Without them, RAR
+files are still fully downloadable, but they carry no cover and cannot be read
+page by page. See [RAR archives](#rar-archives).
 
 ---
 
@@ -372,7 +373,8 @@ python3 app/server.py start     # background daemon, writes data/server.pid
 python3 app/server.py stop      # SIGTERM, then SIGKILL after 10s
 python3 app/server.py restart
 python3 app/server.py status
-python3 app/server.py scan      # one-off scan, then exit
+python3 app/server.py scan      # one-off incremental scan, then exit
+python3 app/server.py rescan    # re-read every file, ignoring timestamps
 python3 app/server.py passwd    # generate a password hash
 ```
 
@@ -446,6 +448,44 @@ requests are resolved against the database rather than by joining user input
 onto a path.
 
 ---
+
+## RAR archives
+
+Most `.cbr` files are ZIP archives wearing a misleading extension, and those
+work out of the box. Genuine RAR archives need two extra pieces. Without them a
+RAR is still downloadable, but it has no cover and cannot be read page by page —
+and a reader that hides coverless entries will show the folder as empty.
+
+**1. An `unrar` binary.** DSM 7 already ships one. Check with:
+
+```bash
+command -v unrar
+```
+
+**2. The `rarfile` module.** Install it *beside the application*, not into a
+user's home: Task Scheduler runs the server as `root`, which would not see a
+`--user` install.
+
+```bash
+/usr/local/bin/python3.9 -m ensurepip --user
+/usr/local/bin/python3.9 -m pip install --target /volume1/Contents/OpdsServer/lib rarfile
+```
+
+The server puts its own `lib/` directory on the import path automatically.
+Keeping it inside the shared folder also means it survives DSM package updates.
+
+**3. Re-read the archives.** An incremental scan skips these files, because they
+have not changed — what changed is what can be learned from them. Force a full
+pass:
+
+```bash
+/usr/local/bin/python3.9 /volume1/Contents/OpdsServer/app/server.py rescan
+```
+
+The `RAR archives: readable` line at startup confirms the module was found.
+
+The alternative is converting your `.cbr` files to `.cbz`, which drops the
+dependency altogether.
 
 ## How it works
 
