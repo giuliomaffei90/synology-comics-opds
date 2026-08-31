@@ -361,6 +361,32 @@ if you always reach the server through that hostname.
 `GET /health` returns `ok` **without authentication** — use it as the proxy
 health check.
 
+### Behind CG-NAT
+
+If your ISP puts you behind carrier-grade NAT, no amount of port forwarding will
+work: the public address is shared between customers, and nothing from the
+internet reaches your router. A tunnel solves it, because the NAS makes the
+outbound connection itself.
+
+[Tailscale Funnel](https://tailscale.com/kb/1223/funnel) does this for free and
+gives you a real certificate on a `*.ts.net` hostname:
+
+```bash
+/var/packages/Tailscale/target/bin/tailscale set --operator=YOUR_USER   # once, as root
+/var/packages/Tailscale/target/bin/tailscale funnel --bg 2202
+```
+
+The first run prints a link to enable Funnel on your tailnet, and HTTPS
+certificates have to be switched on under *DNS* in the Tailscale admin console.
+The configuration survives reboots.
+
+Funnel forwards `X-Forwarded-Proto: https` and `X-Forwarded-Host`, so the
+catalogue links come out right with no configuration on this side — leave
+`base_url` empty and the LAN address keeps working at the same time.
+
+Remember what this means: the catalogue is reachable by anyone on the internet
+who knows the hostname, with only the password in the way. Make it a long one.
+
 Do not forward port 2202 directly from your router. Everything is plain HTTP.
 
 ---

@@ -349,6 +349,10 @@ def main():
         r = get(base + "/opds", headers={"X-Forwarded-Proto": "https",
                                          "X-Forwarded-Host": "comics.example.com"})
         assert b"https://comics.example.com/opds/folder/" in r.read()
+        # a proxy may include the port in X-Forwarded-Host (Tailscale Funnel does)
+        r = get(base + "/opds", headers={"X-Forwarded-Proto": "https",
+                                         "X-Forwarded-Host": "nas.example.ts.net:8443"})
+        assert b"https://nas.example.ts.net:8443/opds/folder/" in r.read()
         cfg["server"]["base_url"] = "https://forced.example/comics"
         r = get(base + "/opds")
         assert b"https://forced.example/comics/opds/folder/" in r.read()
