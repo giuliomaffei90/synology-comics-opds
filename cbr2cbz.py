@@ -60,6 +60,11 @@ def repack(archive, dest, workdir):
             src = os.path.join(workdir, name.replace("/", os.sep))
             if os.path.isfile(src):
                 z.write(src, name)
+            else:
+                # unrar rewrites names it deems unsafe - a '|' in the page names of
+                # some scans - so the extracted file is not where its name says it
+                # is. Read that member straight out of the archive instead.
+                z.writestr(name, archive.read(name))
     return names
 
 
@@ -141,6 +146,29 @@ def self_test():
             assert z.read("ComicInfo.xml").endswith(b"ComicInfo.xml")
             assert z.getinfo("1.png").compress_type == zipfile.ZIP_STORED
         print("ok  repack: every member kept, natural page order, metadata preserved")
+
+        # some archives extract under different names than they advertise; the
+        # repack must fall back to reading those members directly
+        class Renaming:
+            def __init__(self, z):
+                self.z = z
+
+            def namelist(self):
+                return self.z.namelist()
+
+            def extractall(self, path):
+                pass                      # as if every name had been rewritten
+
+            def read(self, name):
+                return self.z.read(name)
+
+        awkward = os.path.join(tmp, "awkward.cbz")
+        with zipfile.ZipFile(src) as archive:
+            names = repack(Renaming(archive), awkward, os.path.join(tmp, "work2"))
+        assert verify(awkward, names) == 4
+        with zipfile.ZipFile(awkward) as z:
+            assert z.read("sub/11.png").endswith(b"sub/11.png")
+        print("ok  repack: members that do not land on disk are read from the archive")
 
         broken = os.path.join(tmp, "broken.cbz")
         with zipfile.ZipFile(broken, "w") as z:
