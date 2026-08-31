@@ -200,7 +200,6 @@ class Library:
         """
         rows = self.connect().execute("""
             SELECT f.*,
-                   (SELECT COUNT(*) FROM books b WHERE b.dir_id=f.id) direct,
                    (SELECT COUNT(*) FROM books b WHERE b.dir=f.path
                        OR substr(b.dir, 1, length(f.path)+1)=f.path||'/') total,
                    (SELECT MAX(b.mtime) FROM books b WHERE b.dir=f.path

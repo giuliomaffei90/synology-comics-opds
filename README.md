@@ -20,6 +20,8 @@ where Docker is not available.
   (`#1`, `#2`, `#10`, `Artbook`), not folders-then-files.
 - **Folder previews** — every folder shows the cover of its first comic, found
   recursively, so a folder that only contains subfolders still gets a thumbnail.
+  Folder feeds are always announced as acquisition feeds, which is what makes
+  readers lay them out with cover artwork instead of a generic folder icon.
 - **Real format detection** — the archive type comes from magic bytes, not the
   file extension. A `.cbr` that is actually a ZIP is served with the correct
   MIME type.

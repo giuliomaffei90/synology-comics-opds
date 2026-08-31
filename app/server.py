@@ -285,7 +285,7 @@ td{padding:.2rem 1rem .2rem 0}button{padding:.5rem 1rem}</style>
         books = self.lib.folder_books(folder_id)
         body = opds.folder_feed(self._base_url(), folder, children, books,
                                 self.lib.root_id, self.lib.child_cover_ids(folder))
-        self._send(200, body, opds.ACQ if books else opds.NAV)
+        self._send(200, body, opds.FEED)
 
     def _cover(self, book_id):
         row = self.lib.book(book_id)

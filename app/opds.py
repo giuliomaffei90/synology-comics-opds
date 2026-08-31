@@ -10,8 +10,12 @@ OPDS = "http://opds-spec.org/2010/catalog"
 DC = "http://purl.org/dc/terms/"
 PSE = "http://vaemendis.net/opds-pse/ns"
 
-NAV = "application/atom+xml;profile=opds-catalog;kind=navigation"
-ACQ = "application/atom+xml;profile=opds-catalog;kind=acquisition"
+# Every folder feed is declared as an acquisition feed, even one that currently
+# holds nothing but subfolders. Readers key their layout off this: a folder
+# announced as navigation gets a generic folder icon, while an acquisition feed
+# gets the cover artwork. A folder always leads to comics eventually, so the
+# acquisition layout is the honest one to show.
+FEED = "application/atom+xml;profile=opds-catalog;kind=acquisition"
 REL_ACQ = "http://opds-spec.org/acquisition"
 REL_IMG = "http://opds-spec.org/image"
 REL_THUMB = "http://opds-spec.org/image/thumbnail"
@@ -32,14 +36,14 @@ def _sub(parent, tag, text=None, **attrs):
     return el
 
 
-def _feed(base, feed_id, title, updated, self_href, self_type):
+def _feed(base, feed_id, title, updated, self_href):
     feed = ET.Element("{%s}feed" % ATOM)
     _sub(feed, "id", feed_id)
     _sub(feed, "title", title)
     _sub(feed, "updated", rfc3339(updated))
     _sub(_sub(feed, "author"), "name", "Comics OPDS")
-    _sub(feed, "link", rel="self", href=base + self_href, type=self_type)
-    _sub(feed, "link", rel="start", href=base + "/opds", type=NAV)
+    _sub(feed, "link", rel="self", href=base + self_href, type=FEED)
+    _sub(feed, "link", rel="start", href=base + "/opds", type=FEED)
     return feed
 
 
@@ -72,9 +76,9 @@ def folder_feed(base, folder, children, books, root_id, covers):
                   default=time.time())
     self_href = folder_href(folder["id"], root_id)
     feed = _feed(base, "urn:comics:folder:" + folder["id"], folder["name"],
-                 updated, self_href, ACQ if books else NAV)
+                 updated, self_href)
     if folder["parent_id"]:
-        _sub(feed, "link", rel="up", type=NAV,
+        _sub(feed, "link", rel="up", type=FEED,
              href=base + folder_href(folder["parent_id"], root_id))
 
     # folders and comics interleaved in one natural order, the way a reader sees them
@@ -92,9 +96,8 @@ def _folder_entry(base, c, root_id, cover_id):
     _sub(entry, "title", c["name"])
     _sub(entry, "updated", rfc3339(c["mtime"] or time.time()))
     _sub(entry, "content", "%d comics" % c["total"], type="text")
-    # navigation link first: some clients just follow the first <link> they find.
-    # kind=acquisition only when the folder actually holds files
-    _sub(entry, "link", rel="subsection", type=ACQ if c["direct"] else NAV,
+    # navigation link first: some clients just follow the first <link> they find
+    _sub(entry, "link", rel="subsection", type=FEED,
          href=base + folder_href(c["id"], root_id))
     # folder thumbnail = the cover of its first comic
     if cover_id:

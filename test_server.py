@@ -207,6 +207,13 @@ def main():
                          "#10 - Ultimo", "Artbook", "Extra material"], order
         up = torre.find("a:link[@rel='up']", ns)
         assert up is not None and up.get("href").endswith("/opds")
+        # every folder announces an acquisition feed, so readers show cover art
+        # instead of a generic folder icon - including folders holding only folders
+        for e in feed.findall("a:entry", ns) + torre.findall("a:entry", ns):
+            link = e.find("a:link[@rel='subsection']", ns)
+            if link is not None:
+                assert link.get("type").endswith("kind=acquisition"), \
+                    (e.findtext("a:title", namespaces=ns), link.get("type"))
         print("ok  tree: single order for folders+files (#2 < #10 < Artbook), up link")
 
         # --- folder thumbnail = cover of the first comic in the subtree
