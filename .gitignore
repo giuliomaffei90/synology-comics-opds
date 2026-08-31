@@ -13,3 +13,6 @@ deploy.env
 
 # optional extras installed on the host (pip install --target lib)
 lib/
+
+# strumento locale di manutenzione libreria, non fa parte del server
+optimize_comics.py
