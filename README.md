@@ -292,9 +292,14 @@ PYTHON /volume1/Contents/OpdsServer/app/server.py restart   # after a config cha
 | Field | Value |
 |---|---|
 | Task | `Comics OPDS` |
-| User | `root` |
+| User | the account that owns the installation |
 | Event | **Boot-up** |
 | Run command | `PYTHON /volume1/Contents/OpdsServer/app/server.py start` |
+
+> Do **not** run it as `root` unless root owns the files. The database, the cover
+> cache and the logs would start being written by root, and the same commands run
+> from your own account — `stop`, `restart`, `scan`, or a deploy — would then fail
+> on permissions. One owner throughout is what keeps that simple.
 
 Click **OK**, confirm the warning, then select the task and click **Run** to
 test it without rebooting.
@@ -488,9 +493,8 @@ and a reader that hides coverless entries will show the folder as empty.
 command -v unrar
 ```
 
-**2. The `rarfile` module.** Install it *beside the application*, not into a
-user's home: Task Scheduler runs the server as `root`, which would not see a
-`--user` install.
+**2. The `rarfile` module.** Install it *beside the application* rather than into
+a user's home, so it does not matter which account ends up running the server:
 
 ```bash
 /usr/local/bin/python3.9 -m ensurepip --user
