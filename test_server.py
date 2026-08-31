@@ -176,6 +176,20 @@ def main():
     assert rar["kind"] == "rar" and rar["pages"] == 0
     print("ok  magic bytes (.cbr=ZIP), ComicInfo.xml, filename fallback")
 
+    # ---- page list cache: sorting hundreds of names on every page turn is waste
+    row = books["Watchmen/Watchmen 01.cbz"]
+    archive = lib.open_archive(library.abspath(row), row["kind"])
+    first = lib.cached_page_names(archive, row["path"], row["size"], row["mtime"])
+    assert list(first) == PAGES
+    # a hit must not touch the archive at all - None would explode if it did
+    assert lib.cached_page_names(None, row["path"], row["size"], row["mtime"]) is first
+    # a changed file must miss, so a re-scanned comic never serves stale pages
+    fresh = lib.cached_page_names(archive, row["path"], row["size"], row["mtime"] + 1)
+    assert fresh == first and fresh is not first
+    archive.close()
+    print("ok  page list cache: hit avoids reopening, edited file invalidates")
+
+
     # ---- server HTTP
     srv.Handler.lib, srv.Handler.cfg = library, cfg
     httpd = srv.Server(("127.0.0.1", 0), srv.Handler)

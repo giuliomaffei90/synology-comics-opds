@@ -167,6 +167,10 @@ def setup_logging(cfg, to_stderr=False):
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    # drop connections a client stopped using: a phone that sleeps or changes
+    # network leaves the socket open, and the thread serving it would otherwise
+    # wait on the kernel keepalive, which is hours away
+    timeout = 60
     server_version = "ComicsOPDS/1.0"
     sys_version = ""
 
@@ -331,7 +335,8 @@ td{padding:.2rem 1rem .2rem 0}button{padding:.5rem 1rem}</style>
             archive = library.open_archive(self.lib.abspath(row), row["kind"])
             if archive is None:
                 raise ValueError("no reader for %s archives" % row["kind"])
-            names = library.page_names(archive)
+            names = library.cached_page_names(
+                archive, row["path"], row["size"], row["mtime"])
             if not names:
                 raise ValueError("no readable pages inside")
             out_of_range = not 0 <= index < len(names)

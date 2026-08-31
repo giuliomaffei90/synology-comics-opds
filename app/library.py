@@ -119,6 +119,33 @@ def page_names(archive):
     return sorted((n for n in archive.namelist() if _is_page(n)), key=natkey)
 
 
+_PAGE_CACHE = {}
+_PAGE_CACHE_LOCK = threading.Lock()
+_PAGE_CACHE_MAX = 64
+
+
+def cached_page_names(archive, path, size, mtime):
+    """page_names() memoised per file, keyed so an edited file misses.
+
+    Filtering and natural-sorting several hundred entries costs about 30ms on a
+    NAS cpu, and page streaming would otherwise redo it on every single page
+    turn for a list that cannot have changed.
+
+    ponytail: plain dict emptied wholesale once it passes 64 files, since
+    nothing here needs true LRU ordering.
+    """
+    key = (path, size, mtime)
+    with _PAGE_CACHE_LOCK:
+        names = _PAGE_CACHE.get(key)
+    if names is None:
+        names = tuple(page_names(archive))
+        with _PAGE_CACHE_LOCK:
+            if len(_PAGE_CACHE) >= _PAGE_CACHE_MAX:
+                _PAGE_CACHE.clear()
+            _PAGE_CACHE[key] = names
+    return names
+
+
 # ---------------------------------------------------------------- metadata
 
 _CI_FIELDS = {
