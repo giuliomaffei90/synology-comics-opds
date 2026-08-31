@@ -22,7 +22,7 @@ echo "==> self-check, locally"
 echo "==> copying to $OPDS_HOST:$OPDS_REMOTE and restarting"
 # One connection, so one password prompt: the files travel through the same
 # SSH session that then runs the commands.
-tar czf - app test_server.py README.md | ssh "$OPDS_HOST" "set -e
+tar --no-xattrs -czf - app test_server.py README.md | ssh "$OPDS_HOST" "set -e
     cd '$OPDS_REMOTE'
     tar xzf -
     rm -rf app/__pycache__

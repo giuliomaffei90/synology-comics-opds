@@ -129,6 +129,17 @@ def main():
     assert srv._parse_range("pages=0-1", 1000) is None
     print("ok  Range parser (open-ended, suffix, past-EOF, invalid)")
 
+    # ---- port guard: a foreground instance must not be clobbered silently
+    import socket as _socket
+    busy = _socket.socket()
+    busy.bind(("127.0.0.1", 0))
+    busy.listen(1)
+    taken = busy.getsockname()[1]
+    assert srv.port_in_use("127.0.0.1", taken)
+    busy.close()
+    assert not srv.port_in_use("127.0.0.1", taken)
+    print("ok  port guard: an occupied port is detected before daemonising")
+
     # ---- scanning
     library = srv.build_library(cfg)
     added, updated, removed, errors = library.scan()

@@ -478,6 +478,23 @@ def build_library(cfg):
 
 # ---------------------------------------------------------------------- CLI
 
+def port_in_use(host, port):
+    """True when something is already listening there.
+
+    A stale foreground instance holds the port without owning the PID file, so
+    checking the PID file alone is not enough to tell whether we can start.
+    """
+    probe = socket.socket()
+    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        probe.bind((host, port))
+        return False
+    except OSError:
+        return True
+    finally:
+        probe.close()
+
+
 def pidfile(cfg):
     return os.path.join(os.path.dirname(str(cfg["database"]["path"])), "server.pid")
 
@@ -503,6 +520,11 @@ def cmd_start(cfg):
     if cfg["security"].get("enabled") and not cfg["security"].get("password_hash"):
         print("security.enabled=true but password_hash is empty "
               "(generate one with: python3 server.py passwd)", file=sys.stderr)
+        return 2
+    host, port = str(cfg["server"]["host"]), int(cfg["server"]["port"])
+    if port_in_use(host, port):
+        print("%s:%d is already in use - another instance, or a foreground "
+              "'server.py run' still alive?" % (host, port), file=sys.stderr)
         return 2
     os.makedirs(os.path.dirname(pidfile(cfg)), exist_ok=True)
     if os.fork() > 0:                       # parent returns at once, for Task Scheduler
