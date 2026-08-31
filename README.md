@@ -484,8 +484,27 @@ pass:
 
 The `RAR archives: readable` line at startup confirms the module was found.
 
-The alternative is converting your `.cbr` files to `.cbz`, which drops the
-dependency altogether.
+### Converting instead
+
+The alternative is turning the RAR files into ZIP ones, which drops the
+dependency altogether and makes every comic behave the same way:
+
+```bash
+python3 cbr2cbz.py --dry-run          # list what would change
+python3 cbr2cbz.py --limit 1          # convert one and look at it
+python3 cbr2cbz.py                    # convert the rest
+python3 cbr2cbz.py --self-test        # check the repacking logic alone
+```
+
+Which files it touches is decided by magic bytes, so a `.cbr` that is already a
+ZIP is left alone. Each new archive is reopened and checked to hold exactly the
+same members before anything is replaced, and every original is **moved** to
+`<library>-rar-originals` rather than deleted — that folder sits outside the
+library so the server does not index it. Delete it yourself once you are happy,
+then run `server.py scan`.
+
+Pages are stored, not deflated: comic images are already compressed, so
+deflating them would cost NAS cpu for nothing.
 
 ## How it works
 
