@@ -7,3 +7,6 @@ __pycache__/
 
 # config reale: contiene l'hash della password
 config/config.yaml
+
+# local deployment settings: host, paths
+deploy.env
