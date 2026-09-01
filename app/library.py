@@ -37,6 +37,7 @@ IMAGE_MIME = {
 }
 
 SCHEMA_VERSION = 2      # bump to force a database rebuild
+COMMIT_EVERY = 50       # file indicizzati fra un commit e l'altro
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS books (
@@ -312,9 +313,15 @@ class Library:
         with open(tmp, "wb") as f:
             f.write(data)
         os.replace(tmp, dest)
-        conn = self.connect()
-        conn.execute("UPDATE books SET cover=? WHERE id=?", (name, row["id"]))
-        conn.commit()
+        # la copertina e' su disco: annotarla nel database e' solo contabilita'.
+        # Se una scansione tiene il lucchetto in scrittura non si fa aspettare il
+        # lettore: si serve comunque, e l'annotazione si rifara' alla prossima volta.
+        try:
+            conn = self.connect()
+            conn.execute("UPDATE books SET cover=? WHERE id=?", (name, row["id"]))
+            conn.commit()
+        except sqlite3.OperationalError as e:
+            log.warning("cover of %s served but not recorded: %s", row["path"], e)
         return dest
 
     # -- scanning
@@ -374,6 +381,11 @@ class Library:
                 else:
                     added += 1
                     log.info("added: %s", rel)
+                # si consegna il lavoro fatto a piccoli lotti: una transazione
+                # lunga quanto la scansione terrebbe fuori chi deve scrivere una
+                # copertina, e quel lettore aspetterebbe fino al timeout
+                if (added + updated) % COMMIT_EVERY == 0:
+                    conn.commit()
 
         removed = 0
         for rel in set(known) - seen:

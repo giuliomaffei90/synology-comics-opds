@@ -212,10 +212,13 @@ def setup_logging(cfg, to_stderr=False):
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    # drop connections a client stopped using: a phone that sleeps or changes
-    # network leaves the socket open, and the thread serving it would otherwise
-    # wait on the kernel keepalive, which is hours away
-    timeout = 60
+    # Idle connections are dropped eventually, so a phone that sleeps or changes
+    # network does not pin a thread until the kernel keepalive notices, hours
+    # later. Generous on purpose: a reader who stares at one page for a minute
+    # must still find the connection alive when they turn it, and clients that
+    # reuse a closed one just stop loading until they are restarted.
+    timeout = 900
+    KEEP_ALIVE = 900
     server_version = "ComicsOPDS/1.0"
     sys_version = ""
 
@@ -239,11 +242,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        self._announce_keep_alive()
         for k, v in headers:
             self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD" and body:
             self.wfile.write(body)
+
+    def _announce_keep_alive(self):
+        """Dice al client quanto vale la connessione, invece di chiuderla a sorpresa."""
+        if not self.close_connection:
+            self.send_header("Keep-Alive", "timeout=%d" % self.KEEP_ALIVE)
 
     def _error(self, code, message):
         self._send(code, ("%d %s\n" % (code, message)).encode())
@@ -481,6 +490,7 @@ scan.</p>
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(length))
+        self._announce_keep_alive()
         for k, v in extra:
             self.send_header(k, v)
         self.end_headers()

@@ -190,6 +190,24 @@ def main():
     archive.close()
     print("ok  page list cache: hit avoids reopening, edited file invalidates")
 
+    # ---- a locked database must not break cover serving
+    # riproduce il caso reale: la scansione tiene il lucchetto in scrittura
+    # mentre un lettore chiede una copertina non ancora estratta
+    import sqlite3 as _sqlite
+    grendel = books["Grendel/#1.cbr"]
+    cached = os.path.join(cfg["cache"]["path"], "covers", grendel["id"] + ".png")
+    if os.path.exists(cached):
+        os.remove(cached)
+    library.connect().execute("UPDATE books SET cover=NULL WHERE id=?", (grendel["id"],))
+    library.connect().commit()
+    blocco = _sqlite.connect(cfg["database"]["path"], timeout=1)
+    blocco.execute("BEGIN EXCLUSIVE")
+    percorso = library.cover_path(library.book(grendel["id"]))
+    assert percorso and os.path.exists(percorso), "copertina non servita col database bloccato"
+    blocco.rollback(); blocco.close()
+    print("ok  locked database: cover still extracted and served")
+
+
 
     # ---- server HTTP
     srv.Handler.lib, srv.Handler.cfg = library, cfg
@@ -213,6 +231,23 @@ def main():
             assert e.code == 401
         assert get(base + "/health", user=None).status == 200
         print("ok  auth: 401 with no and with wrong credentials, /health open")
+
+        # una connessione riusata deve restare valida, e il server deve dire
+        # per quanto: un lettore che si ferma un minuto su una tavola non deve
+        # trovarsela chiusa quando gira pagina
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        intestazione = base64.b64encode(b"tester:s3gr3t0").decode()
+        risposte = []
+        for _ in range(3):
+            c.request("GET", "/opds", headers={"Authorization": "Basic " + intestazione})
+            r = c.getresponse(); r.read()
+            risposte.append((r.status, r.getheader("Keep-Alive"), r.getheader("Connection")))
+        c.close()
+        assert all(s == 200 for s, _, _ in risposte), risposte
+        assert all(k and "timeout=" in k for _, k, _ in risposte), risposte
+        assert srv.Handler.timeout >= 300, srv.Handler.timeout
+        print("ok  keep-alive: connection reused and its lifetime advertised")
 
         # feed root
         r = get(base + "/opds")
